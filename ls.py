@@ -25,7 +25,7 @@ class ActionPlanner:
 
         return outer
 
-    def perfrom_actions(self, cli_args: argparse.Namespace, data: List[str]) -> List:
+    def perfrom_actions(self, cli_args: argparse.Namespace, data: List) -> List:
         actions = [self.actions.get(k) for k, v in vars(cli_args).items() if v and self.actions.get(k)]
 
         new_data = data.copy()
@@ -60,44 +60,45 @@ def handle_args() -> argparse.Namespace:
 
 def prepare_entries_to_display(cli_args: argparse.Namespace) -> Generator:
     """First, yields all additional files mentioned in CLI.
-    Then scans each dir mentioned in CLI and yields files from it.
-
-    But, it yields the whole list of stuff at once. I have no idea why. Chain does the same thing."""
+    Then scans each dir mentioned in CLI and yields files from it."""
 
     yield from filter(os.path.isfile, cli_args.files_or_dirs)
 
     paths_to_scan = filter(os.path.isdir, cli_args.files_or_dirs)
-    yield from ((os.listdir(path)) for path in paths_to_scan)
+    for path in paths_to_scan:
+        for entry in os.scandir(path):
+            yield entry.path
 
 
 if __name__ == '__main__':
     ap = ActionPlanner()
 
     @ap.action_decorator('f')
-    def do_sort(to_display: List[str]) -> List:
-        return sorted(to_display)
+    def do_sort(abs_paths: List[str]) -> List[str]:
+        return sorted(abs_paths, key=lambda p: os.path.basename(p))
 
     @ap.action_decorator('r')
-    def do_sort(to_display: List[str]) -> List:
-        return sorted(to_display, reverse=True)
+    def rev_sort(abs_paths: List[str]) -> List[str]:
+        return sorted(abs_paths, key=lambda p: os.path.basename(p), reverse=True)
 
     @ap.action_decorator('F')
-    def nature_of_file(to_display: List[str]) -> List:
+    def nature_of_file(abs_paths: List[str]) -> List[str]:
         result = []
-        for path in to_display:
+        for path in abs_paths:
+            name = os.path.basename(path)
             if os.path.isdir(path):
-                result.append(path + '/')
+                result.append(name + '/')
             elif os.access(path, os.X_OK):
-                result.append(path + '*')
+                result.append(name + '*')
             else:
-                result.append(path)
+                result.append(name)
 
         return result
 
     @ap.action_decorator('l')
-    def long_format(to_display: List[str]) -> List:
+    def long_format(abs_paths: List[str]) -> List[str]:
         rows = ['']
-        for path in to_display:
+        for path in abs_paths:
             mtime = time.strftime('%d_%b_%Y_%H:%M:%S', time.localtime(os.path.getmtime(path)))
             size = os.path.getsize(path)
 
@@ -106,29 +107,29 @@ if __name__ == '__main__':
             else:
                 file_or_dir = ''
 
-            rows.append(f'{file_or_dir}\t{mtime}\t{size:9_}\t{path}\n')
+            rows.append(f'{file_or_dir}\t{mtime}\t{size:12_}\t{os.path.basename(path)}\n')
         return rows
 
     @ap.action_decorator('t')
-    def sort_by_mtime(to_display: List[str]) -> List:
-        return sorted(to_display, key=lambda p: os.path.getmtime(p))
+    def sort_by_mtime(abs_paths: List[str]) -> List[str]:
+        return sorted(abs_paths, key=lambda p: os.path.getmtime(p))
 
     @ap.action_decorator('a')
-    def include_dots(to_display: List[str]) -> List:
-        return list(filter(lambda p: p[0] != '.', to_display))
+    def include_dots(abs_paths: List[str]) -> List[str]:
+        return list(filter(lambda p: os.path.basename(p)[0] != '.', abs_paths))
 
     @ap.action_decorator('1')
-    def one_column(to_display: List[str]) -> List:
-        return list(map(lambda p: p + '\n', to_display))
+    def one_column(abs_paths: List[str]) -> List[str]:
+        return list(map(lambda p: os.path.basename(p) + '\n', abs_paths))
 
     @ap.action_decorator('m')
-    def one_column(to_display: List[str]) -> List:
+    def one_column(abs_paths: List[str]) -> List[str]:
         columns = shutil.get_terminal_size().columns
 
         rows = ['']
         row = ''
-        len_to_display = len(to_display)
-        for i, path in enumerate(to_display):
+        len_to_display = len(abs_paths)
+        for i, path in enumerate(map(os.path.basename, abs_paths)):
             if len(row) + len(path) >= columns:
                 row += '\n'
                 rows.append(row)
@@ -145,5 +146,6 @@ if __name__ == '__main__':
 
     args = handle_args()
 
-    entries_to_display = next(prepare_entries_to_display(args))
-    print(*ap.perfrom_actions(args, entries_to_display))
+    entries_to_display = list(prepare_entries_to_display(args))
+    result_to_display = list(ap.perfrom_actions(args, entries_to_display))
+    print(*map(os.path.basename, result_to_display))
