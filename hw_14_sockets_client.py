@@ -37,27 +37,6 @@ class SensorMonitor:
         self.keep_acq.clear()
 
 
-def server(run: Event, host: str, port: int, log_fp: str):
-    """Runs server connected to single client.
-    Receives and saves data to specified file.
-    Shutdown by specified event clear."""
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
-        server_sock.bind((host, port))
-        server_sock.listen()
-
-        client_sock, addr = server_sock.accept()
-        with client_sock:
-            print(f'Server: {addr} connected')
-
-            with open(log_fp, 'a+') as f:
-                while run.is_set():
-                    data = f'{client_sock.recv(1024).decode("utf-8")}\n'
-                    print(f'Server: Recvd: {data}')
-
-                    f.write(data)
-
-
 def client(run: Event, host: str, port: int, monitor: SensorMonitor):
     """Client collecting data from specified sensor monitor.
     Sends data to server.
@@ -81,7 +60,6 @@ if __name__ == '__main__':
     keep_running = Event()
     keep_running.set()
 
-    Thread(target=server, args=(keep_running, HOST, PORT, 'sensor_log.txt')).start()
     Thread(target=client, args=(keep_running, HOST, PORT, sm)).start()
 
     keyboard.wait('Esc')
